@@ -1,0 +1,81 @@
+name: ARM64 Kernel Build
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    
+    env:
+      ARCH: arm64
+      # 显式指定交叉编译前缀
+      CROSS_COMPILE: aarch64-none-linux-gnu-
+
+    steps:
+    - name: Checkout Kernel Source
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+        fetch-depth: 0 
+
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libncurses-dev flex bison bc \
+             libssl-dev dwarves lz4 zstd cpio gzip tar xz-utils libclang-dev clang
+
+    - name: Setup Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rust-src
+
+    - name: Install Bindgen
+      run: |
+        cargo install bindgen-cli
+        make rustavailable
+
+    - name: Download and Extract ARM GNU Toolchain
+      run: |
+        # 使用arm官方工具链
+        TOOLCHAIN_URL="https://developer.arm.com/-/media/Files/downloads/gnu/15.2.rel1/binrel/arm-gnu-toolchain-15.2.rel1-aarch64-aarch64-none-linux-gnu.tar.xz"
+        TOOLCHAIN_DIR="arm-gnu-toolchain"
+        
+        mkdir -p "${TOOLCHAIN_DIR}"
+        wget -qO- "${TOOLCHAIN_URL}" | tar -xJ --strip-components=1 -C "${TOOLCHAIN_DIR}"
+        
+        # 将官方工具链的 bin 目录注入 PATH 的最前面，确保系统优先使用它而不是自带的 gcc
+        echo "PATH=$(pwd)/${TOOLCHAIN_DIR}/bin:$PATH" >> $GITHUB_ENV
+
+    - name: Assume .config is unchanged
+      run: |
+        git update-index --assume-unchanged .config
+        # 告诉 Git 暂时不要跟踪 .config 文件的任何变化
+
+    - name: Configure
+      run: |
+        make olddefconfig
+
+    - name: Build Kernel
+      run: |
+        make -j$(nproc)
+
+    - name: Install modules
+      run: |
+        mkdir -p out/modules
+        make modules_install INSTALL_MOD_PATH=out/modules
+
+    - name: Package
+      run: |
+        cp .config out/
+        cp -r arch/arm64/boot out/
+        tar -Jcvf out.tar.xz out
+
+    - name: Upload Kernel Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel-artifacts
+        path: |
+          out.tar.xz
+        if-no-files-found: error
