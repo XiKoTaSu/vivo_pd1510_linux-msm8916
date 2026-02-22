@@ -193,6 +193,13 @@
 };
 
 &pm8916_rpm_regulators {
+	pm8916_l10: l10 {
+		regulator-min-microvolt = <2700000>;
+		regulator-max-microvolt = <2800000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
 	pm8916_l16: l16 {
 		regulator-min-microvolt = <2850000>;
 		regulator-max-microvolt = <2850000>;
