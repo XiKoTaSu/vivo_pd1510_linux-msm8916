@@ -7,16 +7,26 @@
 #include <linux/gpio/consumer.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
+#include <linux/regulator/consumer.h>
 
 #include <drm/drm_mipi_dsi.h>
 #include <drm/drm_modes.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_probe_helper.h>
 
+/* From panel-novatek-nt35510.c */
+#define NT35510S_DOPCTR_0_DSIM BIT(4) /* Enable video mode on DSI */
+
 struct nt35510s {
 	struct drm_panel panel;
 	struct mipi_dsi_device *dsi;
+	struct regulator_bulk_data *supplies;
 	struct gpio_desc *reset_gpio;
+};
+
+static const struct regulator_bulk_data nt35510s_supplies[] = {
+	{ .supply = "vdd" },
+	{ .supply = "vddio" },
 };
 
 static inline struct nt35510s *to_nt35510s(struct drm_panel *panel)
@@ -116,7 +126,7 @@ static int nt35510s_on(struct nt35510s *ctx)
 				     0xf7, 0x03, 0xff);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0,
 				     0x55, 0xaa, 0x52, 0x08, 0x00);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb1, 0xec, 0x00);
+	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb1, 0xec | NT35510S_DOPCTR_0_DSIM, 0x00);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb5, 0x6b);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb6, 0x05);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xb7, 0x00, 0x00);
@@ -150,12 +160,19 @@ static int nt35510s_prepare(struct drm_panel *panel)
 	struct device *dev = &ctx->dsi->dev;
 	int ret;
 
+	ret = regulator_bulk_enable(ARRAY_SIZE(nt35510s_supplies), ctx->supplies);
+	if (ret < 0) {
+		dev_err(dev, "Failed to enable regulators: %d\n", ret);
+		return ret;
+	}
+
 	nt35510s_reset(ctx);
 
 	ret = nt35510s_on(ctx);
 	if (ret < 0) {
 		dev_err(dev, "Failed to initialize panel: %d\n", ret);
 		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+		regulator_bulk_disable(ARRAY_SIZE(nt35510s_supplies), ctx->supplies);
 		return ret;
 	}
 
@@ -173,6 +190,7 @@ static int nt35510s_unprepare(struct drm_panel *panel)
 		dev_err(dev, "Failed to un-initialize panel: %d\n", ret);
 
 	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+	regulator_bulk_disable(ARRAY_SIZE(nt35510s_supplies), ctx->supplies);
 
 	return 0;
 }
@@ -216,6 +234,13 @@ static int nt35510s_probe(struct mipi_dsi_device *dsi)
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
 
+	ret = devm_regulator_bulk_get_const(dev,
+					    ARRAY_SIZE(nt35510s_supplies),
+					    nt35510s_supplies,
+					    &ctx->supplies);
+	if (ret < 0)
+		return ret;
+
 	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(ctx->reset_gpio))
 		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
@@ -226,8 +251,8 @@ static int nt35510s_probe(struct mipi_dsi_device *dsi)
 
 	dsi->lanes = 2;
 	dsi->format = MIPI_DSI_FMT_RGB888;
-	dsi->mode_flags = MIPI_DSI_MODE_VIDEO_BURST | MIPI_DSI_MODE_VIDEO_HSE |
-			  MIPI_DSI_MODE_NO_EOT_PACKET |
+	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST |
+			  MIPI_DSI_MODE_VIDEO_HSE | MIPI_DSI_MODE_NO_EOT_PACKET |
 			  MIPI_DSI_CLOCK_NON_CONTINUOUS | MIPI_DSI_MODE_LPM;
 
 	ctx->panel.prepare_prev_first = true;
@@ -276,5 +301,5 @@ static struct mipi_dsi_driver nt35510s_driver = {
 module_mipi_dsi_driver(nt35510s_driver);
 
 MODULE_AUTHOR("linux-mdss-dsi-panel-driver-generator <fix@me>"); // FIXME
-MODULE_DESCRIPTION("DRM driver for nt35510s fwvga command mode dsi panel");
+MODULE_DESCRIPTION("DRM driver for nt35510s fwvga video mode dsi panel");
 MODULE_LICENSE("GPL");

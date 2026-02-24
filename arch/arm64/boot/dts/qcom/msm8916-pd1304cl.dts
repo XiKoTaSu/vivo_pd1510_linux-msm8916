@@ -6,6 +6,7 @@
 #include "msm8916-modem-qdsp6.dtsi"
 
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/linux-event-codes.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/leds/common.h>
@@ -26,17 +27,19 @@
 		serial0 = &blsp_uart2;
 	};
 
-	chosen {
-		stdout-path = "serial0";
-	};
-	
-    backlight: backlight {
+	backlight: backlight {
 		compatible = "pwm-backlight";
 		pwms = <&pm8916_pwm 0 100000>;
 
 		brightness-levels = <0 255>;
 		num-interpolated-steps = <255>;
 		default-brightness-level = <64>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcd_bl_en_default>;
+		enable-gpios = <&tlmm 8 GPIO_ACTIVE_HIGH>;
+		post-pwm-on-delay-ms = <10>;
+		pwm-off-delay-ms = <10>;
 	};
 
 	gpio-keys {
@@ -60,6 +63,33 @@
 		id-gpios = <&tlmm 110 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&usb_id_default>;
+	};
+
+	battery: battery-cell {
+		compatible = "simple-battery";
+		over-voltage-threshold-microvolt = <4350000>;
+		re-charge-voltage-microvolt = <3400000>;
+		voltage-min-design-microvolt = <3450000>;
+		voltage-max-design-microvolt = <4300000>;
+
+		precharge-current-microamp = <200000>;
+		precharge-upper-limit-microvolt = <3000000>;
+		constant-charge-current-max-microamp = <1800000>;
+		constant-charge-voltage-max-microvolt = <4250000>;
+		trickle-charge-current-microamp = <0>;
+
+		energy-full-design-microwatt-hours = <7600000>;
+		charge-full-design-microamp-hours = <2000000>;
+
+		ocv-capacity-celsius = <25>;
+		ocv-capacity-table-0 = <4300000 100>, <4250000 95>, <4204000 90>,
+			<4152000 85>, <4102000 80>, <4060000 75>, <3998000 70>,
+			<3964000 65>, <3924000 60>, <3874000 55>, <3842000 50>,
+			<3820000 45>, <3800000 40>, <3785000 35>, <3765000 30>,
+			<3758000 25>, <3735000 20>, <3706000 16>, <3690000 13>,
+			<3687000 11>, <3686000 10>, <3684000 9>, <3680000 8>,
+			<3668000 7>, <3640000 6>, <3596000 5>, <3542000 4>,
+			<3472000 3>, <3378000 2>, <3239000 1>, <3000000 0>;
 	};
 };
 
@@ -96,9 +126,9 @@
 &blsp_i2c3 {
 	status = "okay";
 
-	led-controller@33 {
+	led-controller@66 {
 		compatible = "ti,tps61311", "ti,tps61310";
-		reg = <0x33>;
+		reg = <0x66>;
 
 		reset-gpios = <&tlmm 31 GPIO_ACTIVE_LOW>;
 
@@ -113,22 +143,105 @@
 	};
 };
 
+&blsp_i2c4 {
+	status = "okay";
+
+	charger: charger@57 {
+		compatible = "summit,smb358";
+		reg = <0x57>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <62 IRQ_TYPE_LEVEL_LOW>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&smb_int_default>;
+
+		summit,enable-charge-control = <SMB3XX_CHG_ENABLE_SW>;
+		summit,inok-polarity = <SMB3XX_SYSOK_INOK_ACTIVE_LOW>;
+		summit,fast-voltage-threshold-microvolt = <3000000>;
+		summit,chip-temperature-threshold-celsius = <100>;
+		summit,usb-current-limit-microamp = <500000>;
+		summit,charge-current-compensation-microamp = <200000>;
+		summit,enable-usb-charging;
+		summit,enable-otg-charging;
+
+		monitored-battery = <&battery>;
+
+		usb_vbus: usb-vbus {
+			regulator-name = "usb_vbus";
+			regulator-min-microvolt = <5000000>;
+			regulator-max-microvolt = <5000000>;
+			regulator-min-microamp = <750000>;
+			regulator-max-microamp = <750000>;
+			summit,needs-inok-toggle;
+		};
+	};
+};
+
 &blsp_i2c5 {
 	status = "okay";
 
-	touchscreen@14 { //gt915L
+	touchscreen@14 { //gt9xx
 		compatible = "goodix,gt928";
 		reg = <0x14>;
 
-		pinctrl-0 = <&gt9xx_int_default>, <&gt9xx_rst_default>;
+		pinctrl-0 = <&ts_int_default>, <&ts_rst_default>;
 		pinctrl-names = "default";
 		interrupt-parent = <&tlmm>;
 		interrupts = <13 IRQ_TYPE_LEVEL_LOW>;
 		irq-gpios = <&tlmm 13 GPIO_ACTIVE_LOW>;
 		reset-gpios = <&tlmm 12 GPIO_ACTIVE_LOW>;
-        AVDD28-supply = <&pm8916_l16>;
-        touchscreen-size-x = <540>;
-        touchscreen-size-y = <960>;
+
+		AVDD28-supply = <&pm8916_l16>;
+		touchscreen-size-x = <480>;
+		touchscreen-size-y = <854>;
+	};
+
+	touchscreen@20 {
+		compatible = "syna,rmi4-i2c";
+		reg = <0x20>;
+
+		pinctrl-0 = <&ts_int_default>, <&ts_rst_default>;
+		pinctrl-names = "default";
+		interrupt-parent = <&tlmm>;
+		interrupts = <13 IRQ_TYPE_EDGE_FALLING>;
+		reset-gpios = <&tlmm 12 GPIO_ACTIVE_LOW>;
+
+		syna,startup-delay-ms = <100>;
+		vdd-supply = <&pm8916_l16>;
+		vio-supply = <&pm8916_l6>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		rmi4-f01@1 {
+			reg = <0x1>;
+			syna,nosleep-mode = <1>;
+		};
+
+		rmi4-f12@12 {
+			reg = <0x12>;
+			syna,sensor-type = <1>;
+		};
+
+		rmi4-f1a@1a {
+			reg = <0x1a>;
+			linux,keycodes = <KEY_BACK KEY_HOME KEY_MENU>;
+		};
+	};
+
+	touchscreen@38 {
+		compatible = "edt,edt-ft5306";
+		reg = <0x38>;
+
+		pinctrl-0 = <&ts_int_default>, <&ts_rst_default>;
+		pinctrl-names = "default";
+		interrupt-parent = <&tlmm>;
+		interrupts = <13 IRQ_TYPE_EDGE_FALLING>;
+		reset-gpios = <&tlmm 12 GPIO_ACTIVE_LOW>;
+
+		vcc-supply = <&pm8916_l16>;
+		iovcc-supply = <&pm8916_l6>;
 	};
 };
 
@@ -162,12 +275,10 @@
 		reg = <0>;
 
 		backlight = <&backlight>;
+		vdd-supply = <&pm8916_l10>;
+		vddio-supply = <&pm8916_l6>;
 
 		reset-gpios = <&tlmm 25 GPIO_ACTIVE_LOW>;
-		backlight-gpios = <&tlmm 8 GPIO_ACTIVE_HIGH>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&lcd_bl_en_default>;
 
 		port {
 			panel_in: endpoint {
@@ -186,6 +297,11 @@
 	qcom,dsi-phy-regulator-ldo-mode;
 };
 
+&pm8916_bms {
+	monitored-battery = <&battery>;
+	status = "okay";
+};
+
 &pm8916_pwm {
 	status = "okay";
 	pinctrl-names = "default";
@@ -193,6 +309,11 @@
 };
 
 &pm8916_rpm_regulators {
+	pm8916_l10: l10 {
+		regulator-min-microvolt = <2700000>;
+		regulator-max-microvolt = <2800000>;
+	};
+
 	pm8916_l16: l16 {
 		regulator-min-microvolt = <2850000>;
 		regulator-max-microvolt = <2850000>;
@@ -247,6 +368,7 @@
 &usb {
 	status = "okay";
 	extcon = <&usb_id>, <&usb_id>;
+	vbus-supply = <&usb_vbus>;
 };
 
 &usb_hs_phy {
@@ -312,14 +434,14 @@
 		bias-disable;
 	};
 
-	gt9xx_int_default: gt9xx-int-default-state {
+	ts_int_default: ts-int-default-state {
 		pins = "gpio13";
 		function = "gpio";
 		drive-strength = <2>;
 		bias-disable;
 	};
 
-	gt9xx_rst_default: gt9xx-rst-default-state {
+	ts_rst_default: ts-rst-default-state {
 		pins = "gpio12";
 		function = "gpio";
 		drive-strength = <2>;
@@ -329,6 +451,14 @@
 	sdc2_cd_default: sdc2-cd-default-state {
 		pins = "gpio38";
 		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
+	smb_int_default: smb-int-default-state {
+		pins = "gpio62";
+		function = "gpio";
+
 		drive-strength = <2>;
 		bias-disable;
 	};

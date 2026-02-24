@@ -33,6 +33,12 @@
 		brightness-levels = <0 255>;
 		num-interpolated-steps = <255>;
 		default-brightness-level = <64>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&lcd_bl_en_default>;
+		enable-gpios = <&tlmm 8 GPIO_ACTIVE_HIGH>;
+		post-pwm-on-delay-ms = <10>;
+		pwm-off-delay-ms = <10>;
 	};
 
 	gpio-keys {
@@ -302,10 +308,6 @@
 		vsn-supply = <&ktd2151_outn>;
 		te-gpios = <&tlmm 24 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&tlmm 25 GPIO_ACTIVE_LOW>;
-		backlight-gpios = <&tlmm 8 GPIO_ACTIVE_HIGH>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&lcd_bl_en_default>;
 
 		port {
 			panel_in: endpoint {
