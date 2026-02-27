@@ -334,10 +334,14 @@
 &pm8916_codec {
 	status = "okay";
 
+	jack-gpios = <&tlmm 9 GPIO_ACTIVE_LOW>;
 	qcom,micbias-lvl = <2800>;
 	qcom,mbhc-vthreshold-low = <75 100 120 180 500>;
 	qcom,mbhc-vthreshold-high = <75 100 120 180 500>;
 	qcom,hphl-jack-type-normally-open;
+
+	pinctrl-names = "default";
+	pinctrl-0 = <&jack_default>;
 };
 
 &pm8916_pwm {
@@ -395,7 +399,7 @@
 
 &mpss_mem {
 	status = "okay";
-	reg = <0x0 0x86800000 0x0 0x2b00000>;
+	reg = <0x0 0x86800000 0x0 0x5100000>;
 };
 
 &sound {
@@ -413,34 +417,16 @@
 	pin-switches = "Speaker";
 
 	audio-routing =
-		"Speaker", "HPH_L",
-		"Speaker", "HPH_R",
+		"Speaker", "Speaker Amp OUTL",
+		"Speaker", "Speaker Amp OUTR",
+		"Speaker Amp INL", "HPH_L",
+		"Speaker Amp INR", "HPH_L",
 		"Headphones", "HPH_L",
 		"Headphones", "HPH_R",
-		"AMIC1", "MIC BIAS Internal2",
+		"AMIC1", "MIC BIAS External1",
 		"AMIC2", "MIC BIAS Internal2";
 
 	aux-devs = <&speaker_amp>;
-
-	primary-dai-link {
-		link-name = "WCD";
-		cpu {
-			sound-dai = <&lpass MI2S_PRIMARY>;
-		};
-		codec {
-			sound-dai = <&lpass_codec 0>, <&pm8916_codec 0>;
-		};
-	};
-
-	tertiary-dai-link {
-		link-name = "WCD-Capture";
-		cpu {
-			sound-dai = <&lpass MI2S_TERTIARY>;
-		};
-		codec {
-			sound-dai = <&lpass_codec 1>, <&pm8916_codec 1>;
-		};
-	};
 };
 
 &usb {
@@ -577,6 +563,14 @@
 	speaker_amp_default: speaker-amp-default-state {
 		pins = "gpio120";
 		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
+	jack_default: jack-default-state {
+		pins = "gpio9";
+		function = "gpio";
+
 		drive-strength = <2>;
 		bias-disable;
 	};
